@@ -1773,128 +1773,120 @@ LOCALPROC DisconnectKeyCodes3(void)
 
 /* --- time, date, location --- */
 
+#define HaveWorkingTime 1
+
 #define dbglog_TimeStuff (0 && dbglog_HAVE)
 
 LOCALVAR ui5b TrueEmulatedTime = 0;
-	/*
-		OSGLUxxx common:
-		The amount of time the program has
-		been running, measured in Macintosh
-		"ticks". There are 60.14742 ticks per
-		second.
 
-		(time when the emulation is
-		stopped for more than a few ticks
-		should not be counted.)
-	*/
+#include "DATE2SEC.h"
 
-#if 0 == SDL_MAJOR_VERSION
-#define HaveWorkingTime 0
-#else
-#define HaveWorkingTime 1
-#endif
+#define TicksPerSecond 1000000
 
-#if 0 != SDL_MAJOR_VERSION
+LOCALVAR blnr HaveTimeDelta = falseblnr;
+LOCALVAR ui5b TimeDelta;
 
-#define MyInvTimeDivPow 16
-#define MyInvTimeDiv (1 << MyInvTimeDivPow)
-#define MyInvTimeDivMask (MyInvTimeDiv - 1)
-#define MyInvTimeStep 1089590 /* 1000 / 60.14742 * MyInvTimeDiv */
+LOCALVAR ui5b NewMacDateInSeconds;
 
+LOCALVAR ui5b LastTimeSec;
+LOCALVAR ui5b LastTimeUsec;
 LOCALVAR Uint32 LastTime;
-
 LOCALVAR Uint32 NextIntTime;
-LOCALVAR ui5b NextFracTime;
 
-#endif /* 0 != SDL_MAJOR_VERSION */
+LOCALPROC GetCurrentTicks(void)
+{
+	struct timeval t;
+
+	gettimeofday(&t, NULL);
+	if (! HaveTimeDelta) {
+		time_t Current_Time;
+		struct tm *s;
+
+		(void) time(&Current_Time);
+		s = localtime(&Current_Time);
+		TimeDelta = Date2MacSeconds(s->tm_sec, s->tm_min, s->tm_hour,
+			s->tm_mday, 1 + s->tm_mon, 1900 + s->tm_year) - t.tv_sec;
+#if 0 && AutoTimeZone /* how portable is this ? */
+		CurMacDelta = ((ui5b)(s->tm_gmtoff) & 0x00FFFFFF)
+			| ((s->tm_isdst ? 0x80 : 0) << 24);
+#endif
+		HaveTimeDelta = trueblnr;
+	}
+
+	NewMacDateInSeconds = t.tv_sec + TimeDelta;
+	LastTimeSec = (ui5b)t.tv_sec;
+	LastTimeUsec = (ui5b)t.tv_usec;
+}
+
+#define MyInvTimeStep 16626 /* TicksPerSecond / 60.14742 */
+
+LOCALVAR ui5b NextTimeSec;
+LOCALVAR ui5b NextTimeUsec;
 
 LOCALPROC IncrNextTime(void)
 {
-#if 0 != SDL_MAJOR_VERSION
-	NextFracTime += MyInvTimeStep;
-	NextIntTime += (NextFracTime >> MyInvTimeDivPow);
-	NextFracTime &= MyInvTimeDivMask;
-#endif /* 0 != SDL_MAJOR_VERSION */
+	NextTimeUsec += MyInvTimeStep;
+	if (NextTimeUsec >= TicksPerSecond) {
+		NextTimeUsec -= TicksPerSecond;
+		NextTimeSec += 1;
+	}
 }
 
 LOCALPROC InitNextTime(void)
 {
-#if 0 != SDL_MAJOR_VERSION
-	NextIntTime = LastTime;
-	NextFracTime = 0;
+	NextTimeSec = LastTimeSec;
+	NextTimeUsec = LastTimeUsec;
 	IncrNextTime();
-#endif /* 0 != SDL_MAJOR_VERSION */
 }
 
-LOCALVAR ui5b NewMacDateInSeconds;
-
-LOCALFUNC blnr UpdateTrueEmulatedTime(void)
+LOCALPROC StartUpTimeAdjust(void)
 {
-	/*
-		OSGLUxxx common:
-		Update TrueEmulatedTime. Needs to convert between how the host
-		operating system measures time and Macintosh ticks.
-	*/
+	GetCurrentTicks();
+	InitNextTime();
+}
 
-#if 0 != SDL_MAJOR_VERSION
-	Uint32 LatestTime;
+LOCALFUNC si5b GetTimeDiff(void)
+{
+	return ((si5b)(LastTimeSec - NextTimeSec)) * TicksPerSecond
+		+ ((si5b)(LastTimeUsec - NextTimeUsec));
+}
+
+LOCALPROC UpdateTrueEmulatedTime(void)
+{
 	si5b TimeDiff;
 
-	LatestTime = SDL_GetTicks();
-	if (LatestTime != LastTime) {
+	GetCurrentTicks();
 
-		NewMacDateInSeconds = LatestTime / 1000;
-			/* no date and time api in SDL */
-
-		LastTime = LatestTime;
-		TimeDiff = (LatestTime - NextIntTime);
-			/* this should work even when time wraps */
-		if (TimeDiff >= 0) {
-			if (TimeDiff > 256) {
-				/* emulation interrupted, forget it */
-				++TrueEmulatedTime;
-				InitNextTime();
+	TimeDiff = GetTimeDiff();
+	if (TimeDiff >= 0) {
+		if (TimeDiff > 16 * MyInvTimeStep) {
+			/* emulation interrupted, forget it */
+			++TrueEmulatedTime;
+			InitNextTime();
 
 #if dbglog_TimeStuff
-				dbglog_writelnNum("emulation interrupted",
-					TrueEmulatedTime);
+			dbglog_writelnNum("emulation interrupted",
+				TrueEmulatedTime);
 #endif
-			} else {
-				do {
-					++TrueEmulatedTime;
-					IncrNextTime();
-					TimeDiff = (LatestTime - NextIntTime);
-				} while (TimeDiff >= 0);
-			}
-			return trueblnr;
 		} else {
-			if (TimeDiff < -256) {
-#if dbglog_TimeStuff
-				dbglog_writeln("clock set back");
-#endif
-				/* clock goofed if ever get here, reset */
-				InitNextTime();
-			}
+			do {
+				++TrueEmulatedTime;
+				IncrNextTime();
+				TimeDiff -= TicksPerSecond;
+			} while (TimeDiff >= 0);
 		}
+	} else if (TimeDiff < - 16 * MyInvTimeStep) {
+		/* clock goofed if ever get here, reset */
+#if dbglog_TimeStuff
+		dbglog_writeln("clock set back");
+#endif
+
+		InitNextTime();
 	}
-#endif /* 0 != SDL_MAJOR_VERSION */
-
-	return falseblnr;
 }
-
 
 LOCALFUNC blnr CheckDateTime(void)
 {
-	/*
-		OSGLUxxx common:
-		Update CurMacDateInSeconds, the number
-		of seconds since midnight January 1, 1904.
-
-		return true if CurMacDateInSeconds is
-		different than it was on the last
-		call to CheckDateTime.
-	*/
-
 	if (CurMacDateInSeconds != NewMacDateInSeconds) {
 		CurMacDateInSeconds = NewMacDateInSeconds;
 		return trueblnr;
@@ -1903,35 +1895,10 @@ LOCALFUNC blnr CheckDateTime(void)
 	}
 }
 
-LOCALPROC StartUpTimeAdjust(void)
-{
-	/*
-		OSGLUxxx common:
-		prepare to call UpdateTrueEmulatedTime.
-
-		will be called again when haven't been
-		regularly calling UpdateTrueEmulatedTime,
-		(such as the emulation has been stopped).
-	*/
-
-#if 0 != SDL_MAJOR_VERSION
-	LastTime = SDL_GetTicks();
-#endif
-	InitNextTime();
-}
-
 LOCALFUNC blnr InitLocationDat(void)
 {
-#if dbglog_OSGInit
-	dbglog_writeln("enter InitLocationDat");
-#endif
-
-#if 0 != SDL_MAJOR_VERSION
-	LastTime = SDL_GetTicks();
-	InitNextTime();
-	NewMacDateInSeconds = LastTime / 1000;
+	GetCurrentTicks();
 	CurMacDateInSeconds = NewMacDateInSeconds;
-#endif
 
 	return trueblnr;
 }

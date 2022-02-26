@@ -371,6 +371,7 @@ LOCALPROC WriteCommonCNFUIOSGContents(void)
 		WriteDestFileLn("#include <stdio.h>");
 		WriteDestFileLn("#include <stdlib.h>");
 		WriteDestFileLn("#include <string.h>");
+		WriteDestFileLn("#include <sys/time.h>");
 	} else if (gbk_apifam_sd2 == gbo_apifam) {
 		WriteDestFileLn("#include <SDL2/SDL.h>");
 		WriteDestFileLn("#include <stdio.h>");
