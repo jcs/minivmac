@@ -363,6 +363,7 @@ enum {
 	gbk_targ_fbpc, /* FreeBSD for PowerPC */
 	gbk_targ_obsd, /* OpenBSD for x86 */
 	gbk_targ_ob64, /* OpenBSD for x64 */
+	gbk_targ_oa64, /* OpenBSD for arm64 */
 	gbk_targ_nbsd, /* NetBSD for x86 */
 	gbk_targ_nb64, /* NetBSD for x64 */
 	gbk_targ_dbsd, /* Dragonfly BSD for x86 */
@@ -459,6 +460,9 @@ LOCALFUNC char * GetTargetName(int i)
 			break;
 		case gbk_targ_ob64:
 			s = "ob64";
+			break;
+		case gbk_targ_oa64:
+			s = "oa64";
 			break;
 		case gbk_targ_nbsd:
 			s = "nbsd";
@@ -994,6 +998,7 @@ LOCALFUNC int dfo_cpufam(void)
 			v = gbk_cpufam_x64;
 			break;
 		case gbk_targ_mcar:
+		case gbk_targ_oa64:
 			v = gbk_cpufam_a64;
 			break;
 		case gbk_targ_irix:
@@ -1085,6 +1090,7 @@ LOCALFUNC tMyErr ChooseTargFam(void)
 			break;
 		case gbk_targ_obsd:
 		case gbk_targ_ob64:
+		case gbk_targ_oa64:
 			gbo_targfam = gbk_targfam_obsd;
 			break;
 		case gbk_targ_nbsd:
